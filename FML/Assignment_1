@@ -1,0 +1,71 @@
+---
+title: "Asantha_Assignment_1"
+assignment dataset name:"Employers" 
+output: html_document
+date: "2025-09-06"
+---
+
+
+Download Dataset from Web
+# Load the CSV file using full path
+employers_data <- read.csv("C:/Users/12165/Downloads/Employers.csv")
+
+# Preview first few rows to check data
+head(employers_data)
+
+# Check structure of data (column types)
+str(employers_data)
+
+
+Import Dataset into R
+# Load required libraries
+library(dplyr)   # For data manipulation
+library(ggplot2) # For data visualization
+
+
+Quantitative Variables
+# Ensure numeric columns are correctly detected
+# Sometimes columns like Salary/Experience may be read as character if they have commas or special symbols
+employers_data$Salary <- as.numeric(gsub(",", "", employers_data$Salary))
+employers_data$Experience <- as.numeric(employers_data$Experience)
+
+# Now summary of numeric variables
+numeric_cols <- sapply(employers_data, is.numeric)
+summary(employers_data[, numeric_cols])
+
+
+Categorical Variables
+# Frequency table for categorical variables
+table(employers_data$Department)
+table(employers_data$Gender)
+table(employers_data$Job_Title)
+table(employers_data$Education_Level)
+table(employers_data$Location)
+
+
+Variable Transformation
+# Create a log-transformed Salary column
+# Adding 1 to avoid log(0) errors
+employers_data <- employers_data %>%
+  mutate(LogSalary = log(Salary + 1))
+
+# Summary of the new variable
+summary(employers_data$LogSalary)
+
+
+Data Visualization
+Histogram of Quantitative Variable
+# Histogram of Salary
+ggplot(employers_data, aes(x = Salary)) +
+  geom_histogram(binwidth = 20000, fill="steelblue", color="black") +
+  labs(title="Distribution of Salaries", x="Salary", y="Count")
+
+
+
+Scatterplot of Two Quantitative Variables
+# Scatterplot of Experience_Years vs Salary
+ggplot(employers_data, aes(x = Experience_Years, y = Salary)) +
+  geom_point(color="darkred") +
+  labs(title="Experience vs Salary", x="Years of Experience", y="Salary")
+
+
