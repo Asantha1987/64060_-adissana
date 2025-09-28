@@ -1,0 +1,205 @@
+---
+title: "Assignment_2_FML"
+author: "Asantha Dissanayake"
+date: "2025-09-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load required libraries
+```{r}
+
+#install.packages(c("caret", "class", "gmodels", "dplyr", "ISLR"))
+library(caret)
+library(class)
+library(gmodels)
+library(dplyr)
+library(ISLR) 
+set.seed(123)
+```
+
+
+
+#Data preparation
+```{r}
+# Import Universal Bank dataset
+bank_data <- read.csv("UniversalBank.csv")
+
+# Remove ID and ZIP since they don’t contribute to prediction
+bank_data <- bank_data %>% select(-ID, -ZIP.Code)
+
+
+```
+
+
+#Encode Target and Education Variable
+```{r}
+# Convert target variable into factor (loan accepted = 1, not accepted = 0)
+bank_data$Personal.Loan <- factor(bank_data$Personal.Loan, levels = c(0,1))
+
+# Recode Education into dummy variables
+bank_data$Education <- factor(bank_data$Education, levels = c(1,2,3))
+edu_dummies <- model.matrix(~ Education - 1, data = bank_data)
+colnames(edu_dummies) <- c("Edu_1","Edu_2","Edu_3")
+
+# Add encoded columns and drop original Education
+bank_data <- cbind(bank_data %>% select(-Education), edu_dummies)
+
+
+```
+
+
+#Partition into Training and Validation Sets (60/40)
+```{r}
+# Split data into 60% training and 40% validation sets
+train_idx <- createDataPartition(bank_data$Personal.Loan, p=0.6, list=FALSE)
+train_set <- bank_data[train_idx, ]
+valid_set <- bank_data[-train_idx, ]
+
+# Normalize predictors based on training data
+scaler <- preProcess(train_set %>% select(-Personal.Loan), method=c("range"))
+train_features <- predict(scaler, train_set %>% select(-Personal.Loan))
+valid_features <- predict(scaler, valid_set %>% select(-Personal.Loan))
+
+train_labels <- train_set$Personal.Loan
+valid_labels <- valid_set$Personal.Loan
+
+```
+
+#Classify New Customer with k = 1
+```{r}
+
+# Define new sample customer profile
+sample_client <- data.frame(
+  Age=40, Experience=10, Income=84, Family=2, CCAvg=2,
+  Mortgage=0, Securities.Account=0, CD.Account=0,
+  Online=1, CreditCard=1,
+  Edu_1=0, Edu_2=1, Edu_3=0
+)
+
+# Reorder columns to match training features
+sample_client <- sample_client[, names(train_features)]
+
+# Normalize using the same scaling parameters from training data
+sample_client_scaled <- predict(scaler, sample_client)
+
+# Apply 1-nearest neighbor prediction
+pred_k1 <- knn(train=train_features, test=sample_client_scaled, cl=train_labels, k=1, prob=TRUE)
+pred_k1
+
+# How would this customer be classified?
+
+# When using k=1 in the k-NN algorithm, the classification of a new customer is determined solely by the single nearest neighbor in the training data. This makes the prediction process extremely sensitive to noise and outliers, since one unusual observation can completely change the outcome. Although k=1 may yield high accuracy on the training set (because it essentially memorizes the data), it usually performs poorly on validation or test sets due to overfitting. In practice, choosing a larger k (such as 5–15) allows the algorithm to base predictions on a broader neighborhood of similar customers, producing more stable and generalizable results.
+```
+
+#Select an Optimal k Value
+```{r}
+#What is a choice of k that balances between overfitting and ignoring predictors?
+
+# Use cross-validation to select an optimal k
+ctrl_knn <- trainControl(method="cv", number=5) 
+knn_model <- train(
+  x = train_features, y = train_labels,
+  method = "knn",
+  tuneGrid = data.frame(k = seq(1,25,2)),
+  trControl = ctrl_knn,
+  preProcess = c("center","scale")
+)
+knn_model
+plot(knn_model)
+
+# Extract the best k
+optimal_k <- knn_model$bestTune$k
+optimal_k
+
+
+#A typical value for k is selected between 5 and 15, representing a balance between the risk of overfitting (with a very small k) and the potential loss of information regarding predictors (with a very large k). In practice, the specific value of k is determined based on the performance of models evaluated on the validation set. This approach ensures that the model is adaptable to significant variations in customer behavior while minimizing the influence of random noise.
+
+```
+
+
+#Confusion Matrix for Validation Data with Best k
+```{r}
+#Presenting the confusion matrix for the validation dataset utilizing the optimal value of k.
+
+# Evaluate performance on validation data using chosen k
+valid_pred <- knn(
+  train = train_features, test = valid_features, cl = train_labels,
+  k = optimal_k
+)
+conf_matrix_val <- confusionMatrix(valid_pred, valid_labels, positive="1")
+conf_matrix_val
+
+
+
+```
+
+#Classify Customer Using Best k
+```{r}
+# Classify the new customer using optimal k
+
+pred_optimal_client <- knn(
+  train=train_features, test=sample_client_scaled,
+  cl=train_labels, k=optimal_k, prob=TRUE
+)
+pred_optimal_client
+
+
+
+```
+
+
+# Redividing into 50% training, 30% validation, 20% test sets
+```{r}
+
+set.seed(123)
+train50_idx <- createDataPartition(bank_data$Personal.Loan, p=0.5, list=FALSE)
+train50 <- bank_data[train50_idx, ]
+temp_data <- bank_data[-train50_idx, ]
+
+valid30_idx <- createDataPartition(temp_data$Personal.Loan, p=0.6, list=FALSE)
+valid30 <- temp_data[valid30_idx, ]
+test20 <- temp_data[-valid30_idx, ]
+
+# Normalize based on 50% training set
+scaler2 <- preProcess(train50 %>% select(-Personal.Loan), method=c("range"))
+train50X <- predict(scaler2, train50 %>% select(-Personal.Loan))
+valid30X <- predict(scaler2, valid30 %>% select(-Personal.Loan))
+test20X <- predict(scaler2, test20 %>% select(-Personal.Loan))
+
+train50Y <- train50$Personal.Loan
+valid30Y <- valid30$Personal.Loan
+test20Y <- test20$Personal.Loan
+
+# Confusion matrices for each partition
+train_preds <- knn.cv(train50X, cl=train50Y, k=optimal_k)
+cm_train <- confusionMatrix(train_preds, train50Y, positive="1")
+
+valid_preds <- knn(train=train50X, test=valid30X, cl=train50Y, k=optimal_k)
+cm_valid30 <- confusionMatrix(valid_preds, valid30Y, positive="1")
+
+test_preds <- knn(train=train50X, test=test20X, cl=train50Y, k=optimal_k)
+cm_test20 <- confusionMatrix(test_preds, test20Y, positive="1")
+
+cm_train
+cm_valid30
+cm_test20
+
+
+#Comment on the differences and their reason.
+
+#Splitting the data into 50% training, 30% validation and 20% test, it is common that each set will be accompanied by distinctive confusion matrices because of how k-NN learns. The best performance is usually shown by the training set because the model is closest to the data it has seen (though this bias is reduced through cross-validation) The validation set is a more practical measure and can be used to check for overfitting, while the test set gives an initial evaluation as it has never been involved in constructing models. Usually accuracy stays high across all sets due mostly to most customers' not accepting loans (class imbalance), but sensitivity/recall for the positive class may drop from training → validation → test. This is because fewer positives exist and the model cannot correctly infer from a small number of examples In sum, the variation seen across the three matrices reflects overfitting, sampling variation, and the true generalization ability of k-NN model
+
+```
+
+
+
+
+
+
+
+
+
