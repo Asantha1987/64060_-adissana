@@ -1,0 +1,231 @@
+---
+title: "Assignment_4_FML"
+author: "Asantha Dissanayake"
+date: "2025-10-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries & Import Data
+
+```{r}
+library(tidyverse)
+library(cluster)
+library(factoextra)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+
+# Import dataset
+firms <- read.csv("Pharmaceuticals.csv", stringsAsFactors = FALSE)
+
+# Quick sanity checks
+head(firms)
+str(firms)
+
+# Interpretation:
+# This chunk prepares the environment and loads the source data.
+# Tidyverse/dplyr streamline manipulation, cluster/factoextra support clustering and diagnostics, and ggplot2/gridExtra handle plots and layout.
+# Together they provide a compact toolkit for running and visualizing k-means.
+
+```
+
+# 1) Isolate & Standardize Quantitative Features
+
+```{r}
+# Select numeric variables used for clustering (financial indicators)
+
+metrics <- firms[, c("Market_Cap", "Beta", "PE_Ratio", "ROE", "ROA", "Asset_Turnover", "Leverage")]
+
+# Standardize to equalize scale influence
+metrics_z <- scale(metrics)
+
+# Confirm ranges after scaling
+summary(metrics_z)
+
+
+
+# Interpretation:
+
+# In this step, only numeric variables relevant to financial performance are selected from the dataset. These include metrics such as market capitalization, return ratios, and leverage — all of which are continuous variables required for k-means clustering. Excluding categorical columns like company name or exchange ensures the algorithm focuses solely on quantitative data.
+
+# Next, the variables are scaled using the scale() function, which standardizes all features to have a mean of zero and a standard deviation of one. This normalization is vital because variables like market capitalization (in billions) could otherwise dominate distance calculations due to their large numeric range.
+
+# The output of summary(metrics_z) confirms that all variables now contribute equally to the clustering process. This preprocessing step guarantees that the analysis reflects relative financial structures, not raw magnitudes, ensuring unbiased clustering results.
+
+```
+
+
+# 2) Choose an Appropriate Number of Clusters (k)
+
+```{r}
+
+
+
+set.seed(123)     #Set a seed value to make results reproducible
+
+#Generate Elbow and Silhouette plots to help decide optimal k
+p_elbow <- fviz_nbclust(metrics_z, kmeans, method = "wss") + ggtitle("Elbow Criterion")
+p_sil   <- fviz_nbclust(metrics_z, kmeans, method = "silhouette") + ggtitle("Silhouette Score")
+
+#Display both plots side-by-side
+grid.arrange(p_elbow, p_sil, ncol = 2)
+
+
+
+# Interpretation:
+
+# The elbow plot highlights where additional clusters yield diminishing returns in within-cluster SSE, while the silhouette plot evaluates cohesion vs. separation. Inspecting both typically points to a compact set of solutions—here, a small k (e.g., 3) balances interpretability with structure captured.
+
+```
+
+
+
+
+# 3) Run k-Means with the Selected k
+
+```{r}
+#Set a seed value to make results reproducible
+set.seed(123)
+km3 <- kmeans(metrics_z, centers = 3, nstart = 25)   ## Run algorithm 25 times to find stable solution
+
+# Model overview
+km3
+
+
+
+# Interpretation:
+
+# We assign firms to 3 groups using multiple random starts to avoid poor local minima.
+# The output summarizes cluster sizes, total/within SS, and the standardized centroids that characterize each segment’s financial profile.
+
+```
+
+
+
+# 4) Inspect Cluster Centroids (Profiles)
+
+```{r}
+# Extract cluster centroids and convert to data frame
+centers_df <- as.data.frame(km3$centers)
+
+# Display the centroid values
+centers_df
+
+# Interpretation:
+
+# Each centroid represents the standardized mean of variables in that cluster. By comparing these values, we can interpret how groups differ — e.g., one cluster might have higher profitability, another higher leverage, etc.
+
+```
+
+
+
+# 5) Visual Map of Firm Groupings
+
+```{r}
+
+# Use different shape and style for the cluster visualization
+fviz_cluster(km3, data = metrics_z,
+             geom = "point",                     # Only show points, no centroids
+             ellipse.type = "norm",              # Use normal-shaped ellipse instead of convex
+             pointshape = 17,                    # Change point shape (triangle)
+             pointsize = 3,                      # Slightly larger points
+             repel = TRUE,                       # Avoid overlapping labels
+             palette = "jco",                    # Different color palette
+             ggtheme = theme_classic(),          # Change overall style
+             main = "Distinct Visualization of k-Means Clusters")
+
+
+
+# Interpretation:
+
+# This step generates a visual representation of how the 21 firms are distributed among the three clusters. The fviz_cluster() function projects the high-dimensional data onto a two-dimensional space (using PCA internally) for visualization. The parameters modify the display — geom = "point" shows only data points, ellipse.type = "norm" produces smooth circular boundaries, and palette = "jco" applies a distinct color scheme.
+
+# The output plot uses triangular markers for each firm, grouped by color according to their cluster. The ellipses surrounding each group represent their spread and orientation. Clusters that are compact and well-separated suggest that the variables chosen have strong discriminative power. Overlaps may appear due to projection onto two principal components, but distinct color zones still confirm meaningful separation.
+
+# In essence, this visual confirms the algorithm’s effectiveness — the firms are organized into three interpretable groups, each with distinct financial characteristics, validating that the chosen features and scaling approach successfully revealed structural differences in the dataset.
+
+```
+
+# 6) Attach Segment Labels to the Master Table
+
+```{r}
+# Add cluster membership as a new column in the dataset
+firms$Segment <- factor(km3$cluster)
+
+# Display a sample of firm names with their assigned clusters
+head(firms[, c("Symbol", "Name", "Segment")])
+
+# Interpretation:
+#This chunk adds a new column named Segment to the dataset, storing the cluster assignment for each firm. The purpose is to merge analytical results with company identifiers like Symbol and Name, allowing the cluster information to be traced back to real-world firms.
+
+# Displaying the first few rows using head() confirms that each firm now has an assigned cluster number. This enables direct comparison of company-level details within and across clusters.
+
+# Conceptually, this step bridges raw analysis and business interpretation. By attaching cluster labels to the original dataset, further descriptive and categorical analysis (such as comparing exchanges or regions) becomes possible, making the clustering results more actionable.
+
+```
+# 7) Examine Non-Numeric Attributes vs Segments (Q c)
+```{r}
+# Compare categorical attributes (e.g., Location, Exchange) across clusters
+
+table(firms$Segment, firms$Location)
+table(firms$Segment, firms$Exchange)
+
+# Interpretation:
+
+# Here, non-numeric attributes like Location and Exchange are analyzed across clusters using the table() function. This helps determine whether categorical factors correspond with the financial clusters derived earlier. For example, a cluster dominated by U.S.-based firms may indicate that regional market conditions influence company performance.
+
+#The resulting frequency tables reveal whether geographic or regulatory differences play a role in shaping financial characteristics. A pattern where one exchange or region dominates a cluster would suggest market-specific influences.
+
+#This step adds contextual depth to the clustering analysis — it connects quantitative segmentation with qualitative insights, showing how environmental or organizational factors might align with financial patterns..
+
+```
+
+
+# 8) Give Descriptive Names to Segments (Q d)
+
+```{r}
+# Replace numeric cluster labels with descriptive business names
+
+firms$Segment_Label <- dplyr::recode(firms$Segment,
+"1" = "Established High-Value",
+"2" = "Leverage-Backed Growth",
+"3" = "Smaller Emerging Players"
+)
+
+# Display a few rows to verify new labels
+
+head(firms[, c("Symbol", "Name", "Segment_Label")])
+
+# Interpretation:
+
+# In this part, each cluster number (1, 2, 3) is replaced with a meaningful business label using recode(). For instance, clusters are renamed as “Established High-Value,” “Leverage-Backed Growth,” and “Smaller Emerging Players.” These names summarize the cluster’s financial personality, inferred from the centroid patterns and non-numeric context.
+
+# This transformation makes the clusters more interpretable for decision-makers who may not be familiar with statistical output. Instead of dealing with abstract numbers, stakeholders can refer to intuitive categories that reflect real business archetypes.
+
+#  In short, this step converts analytical results into communicable business insight — an essential bridge between data science and managerial interpretation.
+```
+
+
+# 9) Executive Takeaways
+
+```{r}
+# Display a concise business summary of the clustering results
+
+cat(
+"The analysis identifies three distinct segments of pharmaceutical firms,",
+"each demonstrating unique financial structures and market behaviors.\n",
+"These insights assist analysts and investors in benchmarking firms,",
+"evaluating performance groups, and designing targeted investment strategies."
+)
+
+# Interpretation:
+
+# This summary translates statistical clustering into actionable insight for business use, summarizing how segmentation aids strategic and financial decision-making.
+
+```
+
+
